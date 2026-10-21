@@ -1,0 +1,24 @@
+name: v3-heartbeat-watch
+# Texts the owner if the home Mac stops updating its heartbeat (house power/internet outage). Timestamp only; no trading keys here.
+on:
+  schedule: [{cron: "*/15 * * * *"}]
+  workflow_dispatch: {}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: check heartbeat
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          T=$(curl -fsS "https://gist.githubusercontent.com/htav1119-sudo/401cef42ef552a7efd2426f43bc3f218/raw/v3-heartbeat.txt?n=$RANDOM" || echo "")
+          if [ -z "$T" ]; then echo "gist unreachable"; exit 0; fi
+          AGE=$(( ( $(date -u +%s) - $(date -u -d "$T" +%s) ) / 60 ))
+          echo "heartbeat $T, age ${AGE} min"
+          # one alert when it first goes stale (30–44 min), a reminder at 6 h; nothing otherwise (text policy D206)
+          if { [ $AGE -ge 30 ] && [ $AGE -lt 45 ]; } || { [ $AGE -ge 360 ] && [ $AGE -lt 375 ]; }; then
+            curl -fsS -H "Title: V3 ALERT - home Mac silent" -H "Priority: high" \
+              -d "The V3 Mac has not checked in for ${AGE} minutes (house power or internet?). Positions keep their safety sells at Alpaca. Check the Mac / router." \
+              "https://ntfy.sh/${NTFY_TOPIC}"
+          fi
